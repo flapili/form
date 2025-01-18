@@ -125,7 +125,7 @@ As an example, the following code renders the form data:
 
 ## License
 
-MIT License © 2024 Benoît Deveaux
+MIT License © 2025 Benoît Deveaux
 
 Todo:
 
