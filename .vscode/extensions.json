@@ -1,0 +1,15 @@
+{
+    "recommendations": [
+        "vivaxy.vscode-conventional-commits",
+        "mkhl.direnv",
+        "dbaeumer.vscode-eslint",
+        "michelemelluso.gitignore",
+        "antfu.goto-alias",
+        "pinage404.nix-extension-pack",
+        "yoavbls.pretty-ts-errors",
+        "antfu.smart-clicks",
+        "gruntfuggly.todo-tree",
+        "dariofuzinato.vue-peek",
+        "vue.volar"
+    ]
+}

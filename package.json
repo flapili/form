@@ -1,5 +1,5 @@
 {
-  "name": "@flapili/form",
+  "name": "@flapili/vue-form",
   "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@10.0.0",
@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/flapili/form.git"
+    "url": "git+https://github.com/flapili/vue-form.git"
   },
   "exports": {
     ".": "./dist/index.js"
@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@antfu/eslint-config": "^3.14.0",
-    "@types/node": "^22.10.6",
+    "@types/node": "^22.10.7",
     "@vitejs/plugin-vue": "^5.2.1",
     "changelogen": "^0.5.7",
     "eslint": "^9.18.0",
@@ -37,8 +37,6 @@
     "zod": "^3.24.1"
   },
   "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild"
-    ]
+    "neverBuiltDependencies": []
   }
 }
