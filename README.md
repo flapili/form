@@ -1,4 +1,4 @@
-# @flapili/form
+# @flapili/vue-form
 
 A Vue 3 form library that integrates Zod for powerful form validation.
 
@@ -14,9 +14,9 @@ A Vue 3 form library that integrates Zod for powerful form validation.
 ## Installation
 
 ```bash
-npm install @flapili/form zod # npm
-pnpm add @flapili/form zod # pnpm
-yarn add @flapili/form zod # yarn
+npm install @flapili/vue-form zod # npm
+pnpm add @flapili/vue-form zod # pnpm
+yarn add @flapili/vue-form zod # yarn
 ```
 
 ## Usage
@@ -25,41 +25,48 @@ Here's a basic example of how to use the form library:
 
 ```vue
 <script setup lang="ts">
-import useForm from '@flapili/form'
+import { useFormComponent } from '@flapili/vue-form'
 import { z } from 'zod'
 
-const { Form } = useForm({
-  // The schema to use for the form, this will be used to validate the form data
-  // and run zod's effect functions (transform, refine, etc ...)
-  schema: z.object({
-    name: z.string().min(1, 'Name is required'),
-    email: z.string().email('Email is invalid'),
-  }).transform((data) => {
-    return {
-      ...data,
-      NAME: data.name.toUpperCase(),
-    }
-  }),
-  // The initial data to use for the form,
-  // this will be used to initialize the form state
-  initialData: {
-    email: '',
-    name: '',
-  },
-  // The function to call when the form is submitted (and the data is validated)
-  onSubmit: res => console.warn(res),
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.string().email('Email is invalid'),
+}).transform((data) => {
+  return {
+    ...data,
+    NAME_UPPER: data.name.toUpperCase(),
+  }
 })
+
+const input = reactive({
+  email: '',
+  name: '',
+})
+
+async function onSubmitCallback(res: z.infer<typeof schema>) {
+  console.log(res) // will log { NAME_UPPER: '...', email: '...', name: '...' }
+  return 'submitted to backend'
+}
+
+const FormComponent = useFormComponent(schema, input, onSubmitCallback)
 </script>
 
 <template>
-  <div>
-    <Form v-slot="{ data, submit, parseResult, isValid, displayErrors, toggleDisplayErrors, reset }">
+  <div class="size-full flex flex-col items-center justify-center">
+    <h1>Test form</h1>
+    {{ input }}
+    <FormComponent v-slot="{ data, submit, parseResult, displayErrors, toggleDisplayErrors, reset, status }">
       <input v-model="data.name" class="border border-gray-300 rounded-md p-2" :class="{ 'border-red-500': displayErrors }">
       <input v-model="data.email" class="border border-gray-300 rounded-md p-2" :class="{ 'border-red-500': displayErrors }">
-      <button type="button" class="rounded-md bg-blue-500 p-2 text-white disabled:opacity-50" :disabled="!isValid" @click="submit">
+      <button
+        type="button"
+        class="rounded-md bg-blue-500 p-2 text-white disabled:opacity-50"
+        :disabled="status !== 'valid'"
+        @click="submit().then(res => console.warn(`return of onSubmitCallback = ${res}`))"
+      >
         Submit
       </button>
-      <pre>{{ parseResult.success === false ? parseResult.error.issues : parseResult.data }}</pre>
+      <pre>{{ parseResult?.error?.issues ?? [] }}</pre>
       <div class="flex flex-col gap-2 children:(rounded-md bg-gray-200 p-2)">
         <button type="button" @click="toggleDisplayErrors">
           Toggle errors showing
@@ -68,53 +75,53 @@ const { Form } = useForm({
           Reset
         </button>
       </div>
-    </Form>
+    </FormComponent>
   </div>
 </template>
 ```
 
 ## API Reference
 
-### useForm Options
+### useFormComponent Parameters
 
-| Option        | Description                                                     |
-|---------------|-----------------------------------------------------------------|
-| `schema`      | The Zod schema for form validation                              |
-| `initialData` | The initial form data                                           |
-| `onSubmit`    | Callback function called with validated data on form submission |
+| Parameter                            | Description                                                     |
+|--------------------------------------|-----------------------------------------------------------------|
+| `schema`                             | The Zod schema for form validation                              |
+| `input`                              | The reactive form data                                          |
+| `onSubmit`                           | Callback function called with validated data on form submission |
+| `options`                            | Optional configuration object                                   |
+| `options.displayErrors`              | Optional ref to control error display                           |
+| `options.mutateDisplayErrorsOnError` | Whether to show errors automatically on validation failure      |
 
-### Return Values
+The `options` parameter is optional and can be omitted.
 
-| Name                  | Description                                |
-|-----------------------|--------------------------------------------|
-| `Form`                | Vue component that wraps your form         |
-| `data`                | Reactive form data                         |
-| `parseResult`         | Current validation result                  |
-| `displayErrors`       | Whether to display validation errors       |
-| `changedAt`           | Timestamp of last form change              |
-| `hasChanged`          | Whether the form has been modified         |
-| `isValid`             | Whether the form is currently valid        |
-| `getErrors`           | Get validation errors for a specific field |
-| `submit`              | Submit the form                            |
-| `reset`               | Reset the form to initial values           |
-| `toggleDisplayErrors` | Toggle error display                       |
+### Form Context
 
-### Form Slot Props
+The form provides a context with the following properties:
 
-The Form component provides the following props to its default slot:
+| Property              | Description                                            |
+|-----------------------|--------------------------------------------------------|
+| `data`                | The reactive form data                                 |
+| `parseResult`         | Current validation result                              |
+| `displayErrors`       | Whether validation errors should be displayed          |
+| `changedAt`           | Timestamp of last form change                          |
+| `hasChanged`          | Whether the form has been modified                     |
+| `status`              | Current form validation status (parsing/valid/invalid) |
+| `submit`              | Submit the form                                        |
+| `getErrors`           | Get validation errors for a specific field path        |
+| `reset`               | Reset the form to initial values                       |
+| `toggleDisplayErrors` | Toggle error display                                   |
 
-| Prop                  | Description                        |
-|-----------------------|------------------------------------|
-| `data`                | Current form data                  |
-| `displayErrors`       | Whether errors should be displayed |
-| `changedAt`           | Timestamp of last change           |
-| `hasChanged`          | Whether form has changed           |
-| `isValid`             | Whether form is valid              |
-| `parseResult`         | Current validation result          |
-| `submit`              | Submit function                    |
-| `getErrors`           | Get field errors                   |
-| `reset`               | Reset function                     |
-| `toggleDisplayErrors` | Toggle error display               |
+### Form Component Slot Props
+
+The Form component provides all the context properties listed above to its default slot. These can be destructured in the template to access form state and methods:
+
+As an example, the following code renders the form data:
+```vue
+<FormComponent v-slot="{ data }">
+  <pre>{{ data }}</pre>
+</FormComponent>
+```
 
 ## License
 

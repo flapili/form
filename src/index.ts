@@ -1,41 +1,49 @@
-import type { ComputedRef, InjectionKey, Ref, SlotsType } from 'vue'
+import type { InjectionKey, Reactive, Ref, SlotsType } from 'vue'
 import type { z } from 'zod'
 
-import { computed, defineComponent, h, provide, ref } from 'vue'
+import { computed, defineComponent, h, onMounted, provide, ref, useAttrs, watch } from 'vue'
 
-function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj))
-}
-
-export const injectionSymbolCtx = Symbol('@flapili/form_ctx') as InjectionKey<{
+/**
+ * The context of the form.
+ */
+export interface Context<
+  onSubmitCb extends (...args: any[]) => any,
+  Schema extends z.ZodType,
+  Input = z.input<Schema>,
+  Output = z.output<Schema>,
+> {
   /**
-   * The timestamp of the last time the form was changed.
+   * The data of the form.
    */
-  changedAt: Ref<Date | null>
-  /**
-   * Whether the form is currently displaying errors.
-   */
-  displayErrors: Ref<boolean>
+  data: Reactive<Input>
   /**
    * The result of the form's parse.
    */
-  parseResult: ComputedRef<z.SafeParseReturnType<any, any>>
+  readonly parseResult: z.SafeParseReturnType<Input, Output> | null
+  /**
+   * Whether the form should display errors.
+   */
+  displayErrors: boolean
+  /**
+   * The timestamp of the last time the form was changed.
+   */
+  changedAt: Date | null
   /**
    * Whether the form has changed.
    */
-  hasChanged: ComputedRef<boolean>
+  readonly hasChanged: boolean
   /**
-   * Whether the form is valid.
+   * The status of the form.
    */
-  isValid: ComputedRef<boolean>
+  readonly status: 'parsing' | 'valid' | 'invalid'
+  /**
+   * The result of the form's submit.
+   */
+  submit: () => ReturnType<onSubmitCb>
   /**
    * The function to call to get the errors for a given path.
    */
   getErrors: (...path: (string | number)[]) => z.ZodIssue[]
-  /**
-   * The function to call to start submitting the form.
-   */
-  submit: () => void
   /**
    * The function to call to reset the form.
    */
@@ -44,59 +52,87 @@ export const injectionSymbolCtx = Symbol('@flapili/form_ctx') as InjectionKey<{
    * The function to call to toggle the display of errors.
    */
   toggleDisplayErrors: () => void
-}>
+}
+
+/**
+ * The symbol to use to provide the form context.
+ */
+export const injectionSymbolCtx = Symbol('@flapili/vue-form_ctx') as InjectionKey<Context<(...args: any[]) => any, z.ZodType>>
 
 /**
  * This is a composable that allows you to create a form from a zod schema, initial data, and a callback.
  *
+ * @param schema - The zod schema to use for the form.
+ * @param input - The data to use for the form.
+ * @param onSubmit - The callback to call when the form is submitted.
  * @param options - The options to use for the form.
- * @param options.schema - The zod schema to use for the form.
- * @param options.initialData - The initial data to use for the form.
- * @param options.onSubmit - The callback to call when the form is submitted.
+ * @param options.displayErrors - Whether the form should display errors.
+ * @param options.mutateDisplayErrorsOnError - Whether the displayErrors should be mutated when the form is invalid (apply only after first form submission try to avoid bad DX).
  */
-export default function useForm<
-  T extends z.ZodType,
-  Input = z.input<T>,
-  Output = z.output<T>,
+export function useFormComponent<
+  Schema extends z.ZodType,
+  onSubmitCb extends (data: z.output<Schema>) => ReturnType<onSubmitCb>,
+  Input = z.input<Schema>,
+  Output = z.output<Schema>,
 >(
-  { schema, initialData, onSubmit }: {
-    schema: T
-    initialData: Input
-    onSubmit: (data: Output) => void
+  schema: Schema,
+  input: Reactive<Input>,
+  onSubmit: onSubmitCb,
+  options?: {
+    /**
+     * Whether the form should display errors.
+     */
+    displayErrors?: Ref<boolean>
+    /**
+     * Whether the displayErrors should be mutated when the form is invalid.
+     */
+    mutateDisplayErrorsOnError?: boolean
   },
 ) {
-  const data = ref(deepClone(initialData))
-  const parseResult = computed(() => schema.safeParse(data.value) as z.SafeParseReturnType<Input, Output>)
+  // keep a copy of the initial data to reset the form
+  const initialInput = JSON.parse(JSON.stringify(input)) as Input
 
-  const isValid = computed(() => parseResult.value.success)
+  const status = ref<'parsing' | 'valid' | 'invalid'>('parsing')
+  const parseResult = ref<z.SafeParseReturnType<Input, Output> | null>(null)
+
+  onMounted(() => {
+    watch(input, async (v) => {
+      status.value = 'parsing'
+      parseResult.value = await schema.safeParseAsync(v)
+      status.value = parseResult.value.success ? 'valid' : 'invalid'
+    }, { deep: true, immediate: true })
+  })
 
   const getErrors = (...path: (string | number)[]) => {
-    if (parseResult.value.success)
+    const v = parseResult.value
+    if (!v)
       return []
 
-    return parseResult
-      .value
-      .error
-      .errors
-      .filter(error => error.path.join('.') === path.join('.'))
+    if (v.success)
+      return []
+
+    return v.error.errors.filter(error => error.path.join('.') === path.join('.'))
   }
 
-  const displayErrors = ref(false)
+  const displayErrors = options?.displayErrors ?? ref(false)
   const changedAt = ref<Date | null>(null)
   const hasChanged = computed(() => changedAt.value !== null)
 
   const submit = () => {
-    const res = schema.safeParse(data.value)
-    if (res.success)
-      onSubmit(res.data)
-    else
-      displayErrors.value = true
+    const res = schema.safeParse(input)
+    if (res.success === false) {
+      if (options?.mutateDisplayErrorsOnError)
+        displayErrors.value = true
+      throw res.error
+    }
+
+    return onSubmit(res.data)
   }
 
   const reset = () => {
-    data.value = deepClone(initialData)
     changedAt.value = null
     displayErrors.value = false
+    Object.assign(input, initialInput)
   }
 
   const toggleDisplayErrors = () => {
@@ -112,7 +148,11 @@ export default function useForm<
         /**
          * The data to use for the form.
          */
-        data: Input
+        data: Reactive<Input>
+        /**
+         * The result of the form's parse.
+         */
+        readonly parseResult: z.SafeParseReturnType<Input, Output> | null
         /**
          * Whether the form should display errors.
          */
@@ -124,43 +164,52 @@ export default function useForm<
         /**
          * Whether the form has changed.
          */
-        hasChanged: boolean
+        readonly hasChanged: boolean
         /**
-         * Whether the form is valid.
+         * The status of the form.
          */
-        isValid: boolean
-        /**
-         * The result of the form's parse.
-         */
-        parseResult: z.SafeParseReturnType<Input, Output>
+        readonly status: 'parsing' | 'valid' | 'invalid'
         /**
          * The function to call to start submitting the form.
          */
-        submit: () => void
+        readonly submit: () => ReturnType<onSubmitCb>
         /**
          * The function to call to get the errors for a given path.
          */
-        getErrors: (...path: (string | number)[]) => z.ZodIssue[]
+        readonly getErrors: (...path: (string | number)[]) => z.ZodIssue[]
         /**
          * The function to call to reset the form.
          */
-        reset: () => void
+        readonly reset: () => void
         /**
          * The function to call to toggle the display of errors.
          */
-        toggleDisplayErrors: () => void
+        readonly toggleDisplayErrors: () => void
       }
     }>,
     setup(_props, { slots }) {
-      provide(injectionSymbolCtx, { changedAt, displayErrors, parseResult, hasChanged, isValid, getErrors, submit, reset, toggleDisplayErrors })
+      const attrs = useAttrs()
 
-      return () => h('form', {}, slots.default?.({
-        data: data.value,
-        displayErrors: displayErrors.value,
+      provide(injectionSymbolCtx, {
+        data: input,
         changedAt: changedAt.value,
-        hasChanged: hasChanged.value,
-        isValid: isValid.value,
+        displayErrors: displayErrors.value,
         parseResult: parseResult.value,
+        hasChanged: hasChanged.value,
+        status: status.value,
+        submit,
+        getErrors,
+        reset,
+        toggleDisplayErrors,
+      } satisfies Context<onSubmitCb, Schema>)
+
+      return () => h('form', attrs, slots.default?.({
+        data: input,
+        changedAt: changedAt.value,
+        displayErrors: displayErrors.value,
+        parseResult: parseResult.value as z.SafeParseReturnType<Input, Output> | null,
+        hasChanged: hasChanged.value,
+        status: status.value,
         submit,
         getErrors,
         reset,
@@ -169,17 +218,5 @@ export default function useForm<
     },
   })
 
-  return {
-    Form: Component,
-    data: data as Ref<Input>,
-    parseResult,
-    displayErrors,
-    changedAt,
-    hasChanged,
-    isValid,
-    getErrors,
-    submit,
-    reset,
-    toggleDisplayErrors,
-  }
+  return Component
 }
